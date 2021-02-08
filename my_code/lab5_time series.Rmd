@@ -1,0 +1,123 @@
+---
+title: 'Part 1: Time series wrangling'
+author: "Anna Talken"
+date: "2/7/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tsibble)
+library(feasts)
+library(fable)
+library(here)
+```
+
+## Read in the data and convert to tsibble
+```{r}
+energy <- read_csv(here("data", "energy.csv"))
+
+energy_ts <- energy %>% 
+  mutate(date = tsibble::yearmonth(month)) %>% 
+  as_tsibble(key = NULL, index = date)
+```
+
+## Exploratory time series visualization 
+
+```{r}
+ggplot(data = energy_ts, aes(x = date, y = res_total)) +
+  geom_line() +
+  labs(y = "Residential energy consumption \n (Trillion BTU)")
+```
+### Seasonplot
+```{r}
+energy_ts %>% 
+  gg_season(y = res_total) +
+  theme_minimal() +
+  labs(x = "month", 
+       y = "residential energy consumption (trillion BTU)")
+```
+### Subseries plot
+```{r}
+energy_ts %>% 
+  gg_subseries(res_total)
+```
+### Decomposition by STL
+
+```{r}
+#Find STL decomposition
+dcmp <- energy_ts %>% 
+  model(STL(res_total ~ season()))
+
+#View the components
+components(dcmp)
+
+#Visualize the components
+components(dcmp) %>% 
+  autoplot() +
+  theme_minimal()
+```
+### Autocorrelation function
+```{r}
+energy_ts %>% 
+  ACF(res_total) %>% 
+  autoplot()
+```
+## Forecasting by Holt-Winters exponential smoothing
+
+```{r}
+# Create the model
+energy_fit <- energy_ts %>% 
+  model(
+    ets = ETS(res_total ~ season("M"))
+  )
+
+#Forecasting using the model 10 years into the future
+energy_forecast <- energy_fit %>% 
+  forecast(h = "10 years")
+
+#Plot just the forecasted values (with 80 and 95 CIs)
+energy_forecast %>% 
+  autoplot()
+
+#plot forecast added to the original data
+energy_forecast %>% 
+  autoplot(energy_ts)
+```
+### Assessing the residuals
+
+```{r}
+# USe broom augment function to predict values and residuals
+energy_predicted <- broom::augment(energy_fit)
+
+#Use View(energy_predicted) to see resulting data frame
+
+View(energy_predicted)
+```
+
+Now plot the energy values(res_total) and the predicted values (sotred as .fitted)
+
+```{r}
+ggplot(data = energy_predicted) + 
+  geom_line(aes(x = date, y = res_total)) +
+  geom_line(aes(x = date, y = .fitted), color = "red")
+```
+
+Explore the residuals (should be uncorrelated, centered at 0 and normally distributed)
+
+```{r}
+ggplot(data = energy_predicted, aes(x = .resid)) +
+  geom_histogram()
+```
+
+
+
+
+
+
+
+
+
+
+
